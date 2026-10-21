@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/intellistream/db" VERSION="20260622" COMMENT="XMLDB file for Moodle local/intellistream"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="local_intellistream_config" COMMENT="IntelliStream per-datatype admin configuration overrides">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="datatype" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="enabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="tabletype" TYPE="int" LENGTH="2" NOTNULL="false" SEQUENCE="false" COMMENT="admin table-type override (0=Required,1=Optional,2=Logs); null = use the derived default"/>
+        <FIELD NAME="discovered" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = row auto-registered by the dynamic-table discovery service (plugin-family prefix rule), not hand-added by an admin"/>
+        <FIELD NAME="custom_columns" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="custom_table" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="notes" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="datatype_uk" TYPE="unique" FIELDS="datatype"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="local_intellistream_logs" COMMENT="IntelliStream operational log entries (ship/export/refresh/error)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="type" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="datatype" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="action" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="details" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="type_timecreated_idx" UNIQUE="false" FIELDS="type, timecreated"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_intellistream_colpart" COMMENT="Blackboard Collaborate per-user session attendance, pulled from the Collaborate cloud API by the collab_sync task">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="sessionuid" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="useruid" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="external_user_id" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="role" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="display_name" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="first_join_time" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="last_left_time" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="duration" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="rejoins" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="sessionuid_idx" UNIQUE="false" FIELDS="sessionuid"/>
+        <INDEX NAME="extuser_idx" UNIQUE="false" FIELDS="external_user_id"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_intellistream_colsync" COMMENT="Tracks which Collaborate sessions have already been synced (finished sessions pulled once)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="sessionuid" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timesynced" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="sessionuid_uk" TYPE="unique" FIELDS="sessionuid"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="local_intellistream_blkhash" COMMENT="Verification sweep: per-entity fingerprints of id blocks, as last confirmed delivered (committed), written by a pass not yet confirmed (pending), or seen to differ by an unconfirmed pass (suspect)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="fingerprint" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="sha256 of format + site id + delivery destination; a row is valid only for this value"/>
+        <FIELD NAME="entity" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false" COMMENT="exporter registry key"/>
+        <FIELD NAME="kind" TYPE="char" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="committed, pending, suspect, or folding (a suspect set being rebuilt)"/>
+        <FIELD NAME="part" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="first block number the row holds (rows of one set never overlap)"/>
+        <FIELD NAME="passstart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="start of the pass that wrote this row"/>
+        <FIELD NAME="blocks" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="base64 of packed [block number, truncated sha256] entries"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="fp_entity_kind_part_uix" UNIQUE="true" FIELDS="fingerprint, entity, kind, part"/>
+        <INDEX NAME="entity_idx" UNIQUE="false" FIELDS="entity"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_intellistream_sweep" COMMENT="Verification sweep: each entity's position in its current pass and the record of its last completed one">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="entity" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false" COMMENT="exporter registry key"/>
+        <FIELD NAME="passgen" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="completed passes; its parity picks the census page slot"/>
+        <FIELD NAME="passstart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="start of the pass in progress; 0 when none is"/>
+        <FIELD NAME="scanstarted" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="the same instant on the plugin clock, as stamped into the census"/>
+        <FIELD NAME="passbatch" TYPE="char" LENGTH="36" NOTNULL="false" SEQUENCE="false" COMMENT="snapshot_batch of the pass in progress"/>
+        <FIELD NAME="nextblock" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="next block number to read"/>
+        <FIELD NAME="pageno" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="census pages written by this pass"/>
+        <FIELD NAME="idcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="ids in those pages"/>
+        <FIELD NAME="pagesok" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="0 once a page failed to write: the pass then emits no manifest"/>
+        <FIELD NAME="clkstate" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="clockless tally of the pass so far: seen,count,maxid,gapped"/>
+        <FIELD NAME="emittedend" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="last time this pass wrote to the buffer"/>
+        <FIELD NAME="lastpassstart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="start of the last completed pass; the next may start 24 h later"/>
+        <FIELD NAME="lastcomplete" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="when the last pass completed"/>
+        <FIELD NAME="pendstart" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="window of the completed pass whose fingerprints await confirmation"/>
+        <FIELD NAME="pendend" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="failures" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="consecutive runs that failed at the same position"/>
+        <FIELD NAME="parkeduntil" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="a failing entity is not retried before this time"/>
+        <FIELD NAME="lasterror" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="entity_uix" UNIQUE="true" FIELDS="entity"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
