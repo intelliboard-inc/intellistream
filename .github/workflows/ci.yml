@@ -1,0 +1,206 @@
+name: Moodle Plugin CI
+
+# Runs Moodle's standard plugin checks (moodle-plugin-ci) on this repository.
+#
+# This repository is the client distribution of local_intellistream. Each branch holds one
+# commit per release, and this workflow is published with it. It runs on GitHub-hosted
+# runners, uses no secrets, and has read-only access to the repository.
+#
+# The Moodle versions under test come from version.php, so the same file serves both release
+# lines: main (Moodle 4.1 and later) and moodle-3.9 (Moodle 3.9). Each entry names its own
+# PostgreSQL image, because Moodle 5.3 requires PostgreSQL 17 and older branches predate it.
+#
+# moodle-plugin-ci needs PHP 7.4 or later, so the 3.9 line's Moodle run uses PHP 7.4. That line
+# also supports PHP 7.2 (Moodle 3.9's minimum), so a separate job parses every file with PHP 7.2.
+
+on:
+  push:
+    branches: [main, moodle-3.9]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: Select Moodle versions
+    runs-on: ubuntu-24.04
+    outputs:
+      include: ${{ steps.select.outputs.include }}
+      php_floor: ${{ steps.select.outputs.php_floor }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read $plugin->requires from version.php
+        id: select
+        run: |
+          set -euo pipefail
+          requires=$(grep -oE '^\$plugin->requires[[:space:]]*=[[:space:]]*[0-9]+' version.php | grep -oE '[0-9]+$' || true)
+          case "${requires}" in
+            2022112800)
+              floor=""   # Moodle 4.1's minimum, PHP 7.4, is already a matrix entry.
+              include='[
+                {"php":"7.4","moodle-branch":"MOODLE_401_STABLE","database":"pgsql","pg":"postgres:14"},
+                {"php":"8.1","moodle-branch":"MOODLE_405_STABLE","database":"mysqli"},
+                {"php":"8.3","moodle-branch":"MOODLE_503_STABLE","database":"pgsql","pg":"postgres:17"}
+              ]' ;;
+            2020061500)
+              floor="7.2"
+              include='[
+                {"php":"7.4","moodle-branch":"MOODLE_39_STABLE","database":"pgsql","pg":"postgres:14"}
+              ]' ;;
+            *)
+              echo "::error::version.php \$plugin->requires='${requires}' matches no known release line."
+              exit 1 ;;
+          esac
+          echo "include=$(echo "${include}" | tr -d ' \n')" >> "$GITHUB_OUTPUT"
+          echo "php_floor=${floor}" >> "$GITHUB_OUTPUT"
+          echo "requires=${requires}"
+
+  php-floor:
+    # A static name: GitHub cannot resolve needs.* in the name of a job it skips, and the
+    # 4.1+ line skips this job.
+    name: Minimum PHP version lint
+    needs: matrix
+    if: needs.matrix.outputs.php_floor != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP ${{ needs.matrix.outputs.php_floor }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ needs.matrix.outputs.php_floor }}
+          coverage: none
+
+      - name: php -l every file
+        run: |
+          set -euo pipefail
+          php -v | head -1
+          find . -path ./.git -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
+          echo "php -l clean: $(find . -path ./.git -prune -o -name '*.php' -print | wc -l) files"
+
+  test:
+    name: ${{ matrix.moodle-branch }} / PHP ${{ matrix.php }} / ${{ matrix.database }}
+    needs: matrix
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: ${{ matrix.database == 'pgsql' && matrix.pg || '' }}
+        env:
+          POSTGRES_USER: 'postgres'
+          POSTGRES_HOST_AUTH_METHOD: 'trust'
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+
+      mysql:
+        image: ${{ matrix.database == 'mysqli' && 'mysql:8.4' || '' }}
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_CHARACTER_SET_SERVER: 'utf8mb4'
+          MYSQL_COLLATION_SERVER: 'utf8mb4_unicode_ci'
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+          persist-credentials: false
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ${{ matrix.database == 'pgsql' && 'pgsql' || 'mysqli' }}, zip, gd, intl, soap
+          ini-values: max_input_vars=5000
+          coverage: none
+
+      - name: Initialise moodle-plugin-ci
+        run: |
+          composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
+          echo $(cd ci/bin; pwd) >> $GITHUB_PATH
+          echo $(cd ci/vendor/bin; pwd) >> $GITHUB_PATH
+          sudo locale-gen en_AU.UTF-8
+          echo "NVM_DIR=$HOME/.nvm" >> $GITHUB_ENV
+
+      - name: Install moodle-plugin-ci
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1
+        env:
+          DB: ${{ matrix.database }}
+          MOODLE_BRANCH: ${{ matrix.moodle-branch }}
+
+      - name: PHP Lint
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phplint
+
+      - name: PHP Mess Detector
+        continue-on-error: true # Reported, never fails the build.
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpmd
+
+      - name: Moodle Code Checker
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpcs --max-warnings 0
+
+      - name: Moodle PHPDoc Checker
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpdoc --max-warnings 0
+
+      - name: Validating
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci validate
+
+      - name: Check upgrade savepoints
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci savepoints
+
+      - name: Mustache Lint
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci mustache
+
+      - name: Grunt
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci grunt --max-lint-warnings 0
+
+      - name: PHPUnit tests
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci phpunit --fail-on-warning
+
+      - name: Behat features
+        id: behat
+        if: ${{ !cancelled() }}
+        run: moodle-plugin-ci behat --profile chrome
+
+      - name: Upload Behat faildump
+        if: ${{ failure() && steps.behat.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Behat faildump (${{ matrix.moodle-branch }}, ${{ matrix.database }})
+          path: ${{ github.workspace }}/moodledata/behat_dump
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Mark cancelled jobs as failed
+        if: ${{ cancelled() }}
+        run: exit 1
