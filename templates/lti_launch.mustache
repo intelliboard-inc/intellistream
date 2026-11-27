@@ -1,0 +1,68 @@
+{{!
+    This file is part of the local_intellistream plugin for Moodle - http://moodle.org/
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_intellistream/lti_launch
+
+    The signed LTI launch form. The local_intellistream/launch AMD module submits it.
+    The submit button is always shown, so the user can submit the form when
+    JavaScript is off or fails. The buttons have no name, so the posted fields are
+    exactly the signed parameters.
+
+    Context variables required for this template:
+    * endpoint - LTI tool launch URL.
+    * inputs - Signed launch parameters: name, type, value.
+    * debug - Show the launch data to an administrator and do not submit by itself.
+
+    Example context (json):
+    {
+        "debug": false,
+        "endpoint": "https://intelliboard.net",
+        "inputs": [
+            {
+                "name": "resource_link_id",
+                "type": "hidden",
+                "value": "0"
+            }
+        ]
+    }
+}}
+<form action="{{endpoint}}" method="post" enctype="application/x-www-form-urlencoded"
+        id="local-intellistream-ltilaunch-{{uniqid}}" data-region="local-intellistream-ltilaunch"
+        data-autosubmit="{{^debug}}1{{/debug}}{{#debug}}0{{/debug}}">
+    {{#inputs}}
+        <input {{#name}}name="{{name}}"{{/name}} type="{{type}}" value="{{value}}">
+    {{/inputs}}
+    <button type="submit" class="btn btn-primary">
+        {{#str}}lti_open_dashboard, local_intellistream{{/str}}
+    </button>
+    <noscript>
+        <p>{{#str}}lti_noscript, local_intellistream{{/str}}</p>
+    </noscript>
+    {{#debug}}
+        <button type="button" class="btn btn-link" data-action="local-intellistream-ltidebug"
+                aria-expanded="false" aria-controls="local-intellistream-ltidebug-{{uniqid}}">
+            {{#str}}lti_toggle_debug_data, local_intellistream{{/str}}
+        </button>
+        <div id="local-intellistream-ltidebug-{{uniqid}}" class="d-none">
+            <p class="mb-0"><strong>{{#str}}lti_basiclti_endpoint, local_intellistream{{/str}}</strong></p>
+            <p>{{endpoint}}</p>
+            <p class="mb-0"><strong>{{#str}}lti_basiclti_parameters, local_intellistream{{/str}}</strong></p>
+            <ul class="list-unstyled">
+                {{#inputs}}
+                    <li>{{#name}}name="{{name}}"{{/name}} --- type="{{type}}" --- value="{{value}}"</li>
+                {{/inputs}}
+            </ul>
+        </div>
+    {{/debug}}
+</form>
